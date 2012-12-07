@@ -10,7 +10,7 @@ __license__ = 'MIT'
 import os
 import re
 
-import httplib, mimetypes, urlparse, hashlib
+import mimetypes, urlparse, hashlib
 from datetime import datetime
 
 try:
@@ -470,7 +470,7 @@ class CkanClient(object):
     #
     # Private Helpers
     #
-    def _post_multipart(self, selector, fields, files):
+    def _post_multipart(self, url, fields, files):
         '''Post fields and files to an http host as multipart/form-data.
 
         Taken from
@@ -486,18 +486,9 @@ class CkanClient(object):
         '''
         content_type, body = self._encode_multipart_formdata(fields, files)
 
-        if self.base_location.startswith('https'):
-            h = httplib.HTTPS(urlparse.urlparse(self.base_location).netloc)
-        else:
-            h = httplib.HTTP(urlparse.urlparse(self.base_location).netloc)
-
-        h.putrequest('POST', selector)
-        h.putheader('content-type', content_type)
-        h.putheader('content-length', str(len(body)))
-        h.endheaders()
-        h.send(body)
-        errcode, errmsg, headers = h.getreply()
-        return errcode, errmsg, headers, h.file.read()
+        request = Request(url, data=body, headers={'Content-Type': content_type})
+        response = urlopen(request)
+        return response.getcode(), response.read()
 
     def _encode_multipart_formdata(self, fields, files):
         '''Encode fields and files to be posted as multipart/form-data.
@@ -571,18 +562,16 @@ class CkanClient(object):
 
         auth_dict = self.storage_auth_get('/form/'+file_key, {})
 
-        u = urlparse.urlparse(auth_dict['action'])
         fields = [(kv['name'], kv['value'])
                   for kv in auth_dict['fields']]
         files  = [('file', os.path.basename(file_key), open(file_path).read())]
-        errcode, errmsg, headers, body = self._post_multipart(u.path, fields,
-                files)
+        errcode, body = self._post_multipart(auth_dict['action'], fields, files)
 
         if errcode == 200:
             file_metadata = self.storage_metadata_get(file_key)
             return file_metadata['_location'], ''
         else:
-            return '', errmsg
+            return '', body
 
     def add_package_resource (self, package_name, file_path_or_url, **kwargs):
         '''Add a file or URL to a dataset (package) as a resource.
